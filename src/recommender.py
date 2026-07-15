@@ -64,6 +64,7 @@ class Recommender:
         self.songs = songs
 
     def _score(self, user: UserProfile, song: Song) -> Tuple[float, List[str]]:
+        """Return (score, reasons) for one song under the Phase 2 recipe."""
         score = 0.0
         reasons: List[str] = []
 
@@ -89,6 +90,7 @@ class Recommender:
         return score, reasons
 
     def recommend(self, user: UserProfile, k: int = 5) -> List[Song]:
+        """Return the top-k songs ranked by score, ties broken by popularity."""
         # Sort by score (desc), breaking ties with popularity so the ranking is
         # stable and predictable.
         ranked = sorted(
@@ -99,6 +101,7 @@ class Recommender:
         return ranked[:k]
 
     def explain_recommendation(self, user: UserProfile, song: Song) -> str:
+        """Return a human-readable sentence explaining a song's score."""
         score, reasons = self._score(user, song)
         if not reasons:
             return f"'{song.title}' scored {score:.2f} with no strong matches."
@@ -151,18 +154,18 @@ def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
 
     if user_prefs.get("genre") is not None and song.get("genre") == user_prefs["genre"]:
         score += GENRE_MATCH_POINTS
-        reasons.append(f"matches your favorite genre ({song['genre']})")
+        reasons.append(f"genre match: {song['genre']} (+{GENRE_MATCH_POINTS:.1f})")
 
     if user_prefs.get("mood") is not None and song.get("mood") == user_prefs["mood"]:
         score += MOOD_MATCH_POINTS
-        reasons.append(f"matches your favorite mood ({song['mood']})")
+        reasons.append(f"mood match: {song['mood']} (+{MOOD_MATCH_POINTS:.1f})")
 
     target_energy = user_prefs.get("energy")
     if target_energy is not None and song.get("energy") is not None:
         energy_pts = _energy_similarity_points(target_energy, song["energy"])
         score += energy_pts
         reasons.append(
-            f"energy {float(song['energy']):.2f} is close to your target"
+            f"energy similarity: {float(song['energy']):.2f} vs target"
             f" {float(target_energy):.2f} (+{energy_pts:.2f})"
         )
 
@@ -174,11 +177,10 @@ def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5) -> List[Tup
     the top k as (song_dict, score, explanation) tuples.
     Required by src/main.py
     """
-    scored: List[Tuple[Dict, float, str]] = []
-    for song in songs:
+    def evaluate(song: Dict) -> Tuple[Dict, float, str]:
         score, reasons = score_song(user_prefs, song)
-        explanation = ", ".join(reasons) if reasons else "no strong matches"
-        scored.append((song, score, explanation))
+        return song, score, ", ".join(reasons) if reasons else "no strong matches"
 
+    scored = [evaluate(song) for song in songs]
     scored.sort(key=lambda item: (item[1], item[0].get("popularity", 0)), reverse=True)
     return scored[:k]
