@@ -1,61 +1,73 @@
 """
 Command line runner for the Music Recommender Simulation.
 
-This file helps you quickly run and test your recommender.
-
-You will implement the functions in recommender.py:
-- load_songs
-- score_song
-- recommend_songs
+Demonstrates the four challenge features:
+  1. Advanced song attributes (era, mood tags, language, explicit, length)
+  2. Multiple scoring modes  (balanced / genre_first / mood_first / energy_focused)
+  3. A diversity penalty      (no single artist/genre floods the top results)
+  4. A formatted results table (tabulate, with an ASCII fallback)
 """
 
 try:
-    from src.recommender import load_songs, recommend_songs
+    from src.recommender import load_songs, recommend_songs, SCORING_MODES
 except ModuleNotFoundError:
-    from recommender import load_songs, recommend_songs
+    from recommender import load_songs, recommend_songs, SCORING_MODES
+
+
+def format_table(recommendations) -> str:
+    """Render the (song, score, explanation) tuples as a readable table."""
+    headers = ["#", "Title", "Artist", "Genre", "Score", "Why it was picked"]
+    rows = []
+    for rank, (song, score, explanation) in enumerate(recommendations, start=1):
+        rows.append([rank, song["title"], song["artist"], song["genre"], f"{score:.2f}", explanation])
+
+    try:
+        from tabulate import tabulate
+        return tabulate(rows, headers=headers, tablefmt="grid")
+    except ImportError:
+        # Simple ASCII fallback so the app still runs without tabulate installed.
+        lines = []
+        for r in rows:
+            lines.append(f"{r[0]}. {r[1]} - {r[2]}  [{r[3]}]  score {r[4]}")
+            for reason in r[5].split(", "):
+                lines.append(f"     - {reason}")
+        return "\n".join(lines)
+
+
+def show(title: str, recommendations) -> None:
+    print("\n" + "=" * 70)
+    print(f"  {title}")
+    print("=" * 70)
+    print(format_table(recommendations))
 
 
 def main() -> None:
     songs = load_songs("data/songs.csv")
     print(f"Loaded songs: {len(songs)}")
 
-    # Distinct example taste profiles to try
+    # Profiles exercise the new advanced attributes: era, language, length,
+    # explicit avoidance, and secondary vibe tags.
     profiles = {
-        "High-Energy Pop": {"genre": "pop", "mood": "happy", "energy": 0.9},
-        "Chill Lofi": {"genre": "lofi", "mood": "chill", "energy": 0.4},
-        "Deep Intense Rock": {"genre": "rock", "mood": "intense", "energy": 0.85},
-        # --- Adversarial / edge-case profiles ---------------------------------
-        # Designed to probe whether the scoring logic can be "tricked" or
-        # produces surprising rankings. See README "Adversarial Evaluation".
-        #
-        # 1. Genre they love vs. energy they want, pulling opposite directions:
-        #    lofi is always low-energy, but they ask for max energy. Which wins?
-        "Conflicting: Hyper Lofi": {"genre": "lofi", "mood": "sad", "energy": 0.95},
-        # 2. A genre that isn't in the catalog at all -> genre bonus never fires;
-        #    ranking must fall back to mood + energy gracefully.
-        "Impossible Genre (kpop)": {"genre": "kpop", "mood": "happy", "energy": 0.7},
-        # 3. Out-of-range energy (5.0). Energy points are 1.5*(1-|Δ|), so this
-        #    goes deeply NEGATIVE -> the "best" song is just the least-penalized.
-        "Out-of-Range Energy": {"genre": "pop", "mood": "happy", "energy": 5.0},
-        # 4. Genre + mood + energy all describe different, incompatible vibes:
-        #    they claim to love metal but want a chill, near-silent track.
-        "Everything Conflicts": {"genre": "metal", "mood": "chill", "energy": 0.1},
-        # 5. No usable signal: blank genre/mood, energy dead-center. Nothing can
-        #    match on genre/mood, so ranking is pure energy + popularity tiebreak.
-        "Blank / No Signal": {"genre": "", "mood": "", "energy": 0.5},
+        "High-Energy Pop": {"genre": "pop", "mood": "happy", "energy": 0.9, "decade": 2020},
+        "Chill Lofi Study": {"genre": "lofi", "mood": "chill", "energy": 0.4,
+                              "language": "instrumental", "length": "short"},
+        "Clean Latin Night": {"genre": "latin", "mood": "passionate", "energy": 0.85,
+                              "language": "spanish", "avoid_explicit": True, "mood_tag": "sensual"},
     }
 
-    for name, user_prefs in profiles.items():
-        recommendations = recommend_songs(user_prefs, songs, k=5)
+    # --- Balanced mode + diversity penalty (Challenges 1, 3, 4) --------------
+    print("\n\n#### BALANCED MODE  (with diversity penalty) ####")
+    for name, prefs in profiles.items():
+        recs = recommend_songs(prefs, songs, k=5, mode="balanced",
+                               artist_penalty=1.5, genre_penalty=0.75)
+        show(name, recs)
 
-        print("\n" + "=" * 44)
-        print(f"  {name.upper()}")
-        print("=" * 44)
-        for rank, (song, score, explanation) in enumerate(recommendations, start=1):
-            print(f"\n{rank}. {song['title']} - {song['artist']}   [score: {score:.2f}]")
-            for reason in explanation.split(", "):
-                print(f"     - {reason}")
-        print()
+    # --- Same profile across every scoring mode (Challenge 2) ----------------
+    print("\n\n#### SCORING MODES  (High-Energy Pop across strategies) ####")
+    demo = {"genre": "pop", "mood": "happy", "energy": 0.9}
+    for mode in SCORING_MODES:
+        recs = recommend_songs(demo, songs, k=5, mode=mode)
+        show(f"MODE: {mode}", recs)
 
 
 if __name__ == "__main__":
